@@ -1,0 +1,517 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Linux on Sharelter</title><link>https://sharelter.github.io/categories/linux/</link><description>Recent content in Linux on Sharelter</description><generator>Hugo -- gohugo.io</generator><language>zh-cn</language><lastBuildDate>Wed, 05 Apr 2023 16:23:08 +0800</lastBuildDate><atom:link href="https://sharelter.github.io/categories/linux/index.xml" rel="self" type="application/rss+xml"/><item><title>用Snapper自动管理btrfs快照</title><link>https://sharelter.github.io/p/snapper/</link><pubDate>Wed, 05 Apr 2023 16:23:08 +0800</pubDate><guid>https://sharelter.github.io/p/snapper/</guid><description>&lt;p>前天因为在疲惫的情况下操作很多东西， 一不小心把要dd进USB的ArchLinux LiveCD给dd到了系统盘里面。。。
+命令执行的时候速度达到了1.8GB/s， 我看了一眼dd的of参数，心中一阵凉意&lt;/p>
+&lt;blockquote>
+&lt;p>我的记忆就这样被清除了吗。。。。&lt;/p>
+&lt;/blockquote>
+&lt;p>好在我还有备份， 不至于太糟， 只不过需要耗费时间来reinstall了&lt;/p>
+&lt;p>我尝试把作业系统完全还原到之前的状态，花费时间3hour&lt;/p>
+&lt;p>但是装回来之后， 我感到这个UI过于熟悉， 动起了翻新系统的念头&lt;/p>
+&lt;p>因为不久之前我在折腾飞腾的时候配置了Fedora， 配好之后还蛮好看的。。&lt;/p>
+&lt;p>真的心动了。。。&lt;/p>
+&lt;p>于是就真的开始动手了。。&lt;/p>
+&lt;p>把刚装好的Arch又完全抹掉，一手拿着&lt;a class="link" href="https://wiki.archlinux.org/title/Installation_guide" target="_blank" rel="noopener"
+>Installation Guide&lt;/a> 操作Livecd, 从头开始安装了一遍Arch, 花费时间2hour&lt;/p>
+&lt;p>~~ 才不会因为忘记安装的时候忘记安装链接Internet的包而需要重新进入Livecd装包呢 ~~&lt;/p>
+&lt;p>~~ 才不会因为贪心有线网络的一点加速而耗费更多时间来让有线链接正常工作呢 ~~&lt;/p>
+&lt;p>这样操作一次真的耗时好多的。。。 不知道我在玩Rock5B的时候怎么会又耐心来来回回这样操作几十次的。。&lt;/p>
+&lt;p>在另一台设备上面打开&lt;a class="link" href="https://wiki.archlinux.org/title/General_recommendations" target="_blank" rel="noopener"
+>General Recommendations&lt;/a>， 给黑漆漆的TTY注入灵魂&lt;/p>
+&lt;h2 id="btrfs子卷规划">Btrfs子卷规划&lt;/h2>
+&lt;p>要构建一个可以持久使用的作业系统的话， 需要有一个良好布局的文件系统来承载它&lt;/p>
+&lt;p>snapper推荐的文件系统布局如下&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt"> 1
+&lt;/span>&lt;span class="lnt"> 2
+&lt;/span>&lt;span class="lnt"> 3
+&lt;/span>&lt;span class="lnt"> 4
+&lt;/span>&lt;span class="lnt"> 5
+&lt;/span>&lt;span class="lnt"> 6
+&lt;/span>&lt;span class="lnt"> 7
+&lt;/span>&lt;span class="lnt"> 8
+&lt;/span>&lt;span class="lnt"> 9
+&lt;/span>&lt;span class="lnt">10
+&lt;/span>&lt;span class="lnt">11
+&lt;/span>&lt;span class="lnt">12
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-fallback" data-lang="fallback">&lt;span class="line">&lt;span class="cl">subvolid=5
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> |
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> ├── @ -|
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> | contained directories:
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> | ├── /usr
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> | ├── /bin
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> | ├── /.snapshots
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> | ├── ...
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> |
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> ├── @home
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> ├── @snapshots
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> ├── @var_log
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>&lt;code>@&lt;/code>是根目录的子卷 &lt;code>@home&lt;/code>是家目录的子卷， &lt;code>@var_log&lt;/code>挂载在&lt;code>/var/log&lt;/code>&lt;/p>
+&lt;p>&lt;code>@snapshot&lt;/code>是专用于快照的子卷， 挂载在&lt;code>/.snapshot&lt;/code>&lt;/p>
+&lt;p>上面所有的子卷前面都有一个&lt;code>@&lt;/code>符号表示这些子卷都直属于subvolid=5的顶层子卷&lt;/p>
+&lt;h2 id="snapper">Snapper&lt;/h2>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-fallback" data-lang="fallback">&lt;span class="line">&lt;span class="cl"># pacman -S snapper
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>snapper是一个辅助管理btrfs子卷的工具&lt;/p>
+&lt;p>可以自动化地定期对配置的子卷进行快照， 而且还可以清除过时的子卷&lt;/p>
+&lt;p>如果要把某个子卷交给&lt;code>snapper&lt;/code>进行快照，可以像下面这样写：&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;span class="lnt">2
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-fallback" data-lang="fallback">&lt;span class="line">&lt;span class="cl"># snapper -c root create-config /
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"># snapper -c home create-config /home
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>子卷的路径写子卷的挂载点就好&lt;/p>
+&lt;p>我一开始操作的时候还以为要把子卷的顶层目录挂载上， 使用由顶层子卷索引的目录才可以让&lt;code>snapper&lt;/code>进行快照操作&lt;/p>
+&lt;p>默认情况下， &lt;code>snapper&lt;/code>将会在根目录子卷下面创建一个&lt;code>/.snapshot&lt;/code>的子卷来存放所有快照&lt;/p>
+&lt;p>这个子卷的路径如下图所示&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;span class="lnt">2
+&lt;/span>&lt;span class="lnt">3
+&lt;/span>&lt;span class="lnt">4
+&lt;/span>&lt;span class="lnt">5
+&lt;/span>&lt;span class="lnt">6
+&lt;/span>&lt;span class="lnt">7
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-fallback" data-lang="fallback">&lt;span class="line">&lt;span class="cl">subvolid=5
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">|
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">|
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> ---- @ # 挂载在/
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> |
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> |
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> .snapshots # 挂载在/.snapshots
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>这样存放快照有一个弊端， 如果后续需要回滚的话， 回滚之后会丢失掉所有的快照&lt;/p>
+&lt;p>要解决这个问题的话 可以为创建快照单独创建一个直属于顶层子卷的子卷&lt;code>@snapshot&lt;/code>&lt;/p>
+&lt;p>在一个正在运行的作业系统上面创建一个子卷的话， 可以先把顶层子卷找一个地方挂载上去再创建子卷&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;span class="lnt">2
+&lt;/span>&lt;span class="lnt">3
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-fallback" data-lang="fallback">&lt;span class="line">&lt;span class="cl"># mkdir /btrfs
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"># btrfs subvolume create /@snapshot
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"># mount -o subvol=@snapshot /dev/nvme1n1p2 /.snapshots
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;h3 id="通过定时器来实现自动化操作">通过定时器来实现自动化操作&lt;/h3>
+&lt;p>snapper可以通过&lt;code>cron&lt;/code>或者&lt;code>systemd timer&lt;/code>来定时触发快照
+但是如果同时启用了&lt;code>cron&lt;/code>和&lt;code>systemd timer&lt;/code>的定时服务， 那么会重复创建两次快照&lt;/p>
+&lt;p>我用了systemd timer来触发， 同时为了避免后面装了cron的实现之后出锅
+把snapper使用cron的定时文件删除掉&lt;/p>
+&lt;p>在&lt;code>/etc/pacman.conf&lt;/code>里面添加一下内容：&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-fallback" data-lang="fallback">&lt;span class="line">&lt;span class="cl">NoExtract = etc/cron.daily/snapper etc/cron.hourly/snapper
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;h2 id="snap-pac">snap-pac&lt;/h2>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-fallback" data-lang="fallback">&lt;span class="line">&lt;span class="cl"># pacman -S snap-pac
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>snap-pac实现了通过&lt;code>pacman&lt;/code>包管理器的hook函数来进行系统更新前后的自动化快照&lt;/p>
+&lt;p>它的配置文件在&lt;code>/etc/snap-pac.ini&lt;/code>
+是一份注释良好的文件&lt;/p>
+&lt;p>里面所有的内容初始状态下都是被注释的 如果没有任何有效的配置内容， &lt;code>snap-pac&lt;/code>将以默认配置运行&lt;/p>
+&lt;p>默认状况下 这个小工具将会对&lt;code>snapper&lt;/code>的root配置进行snapshot&lt;/p>
+&lt;p>如果你的snapper里面有这个名为root的配置的话 不需要任何其他配置，&lt;code>snap-pac&lt;/code>就可以正常工作了&lt;/p>
+&lt;p>配置文件里面详细写了每个参数的作用和它的默认值， 如果想要设定的值和默认值一样， 这项配置留空就可以&lt;/p>
+&lt;p>下面放一下我的&lt;code>/etc/snap-pac.ini&lt;/code>文件&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt"> 1
+&lt;/span>&lt;span class="lnt"> 2
+&lt;/span>&lt;span class="lnt"> 3
+&lt;/span>&lt;span class="lnt"> 4
+&lt;/span>&lt;span class="lnt"> 5
+&lt;/span>&lt;span class="lnt"> 6
+&lt;/span>&lt;span class="lnt"> 7
+&lt;/span>&lt;span class="lnt"> 8
+&lt;/span>&lt;span class="lnt"> 9
+&lt;/span>&lt;span class="lnt">10
+&lt;/span>&lt;span class="lnt">11
+&lt;/span>&lt;span class="lnt">12
+&lt;/span>&lt;span class="lnt">13
+&lt;/span>&lt;span class="lnt">14
+&lt;/span>&lt;span class="lnt">15
+&lt;/span>&lt;span class="lnt">16
+&lt;/span>&lt;span class="lnt">17
+&lt;/span>&lt;span class="lnt">18
+&lt;/span>&lt;span class="lnt">19
+&lt;/span>&lt;span class="lnt">20
+&lt;/span>&lt;span class="lnt">21
+&lt;/span>&lt;span class="lnt">22
+&lt;/span>&lt;span class="lnt">23
+&lt;/span>&lt;span class="lnt">24
+&lt;/span>&lt;span class="lnt">25
+&lt;/span>&lt;span class="lnt">26
+&lt;/span>&lt;span class="lnt">27
+&lt;/span>&lt;span class="lnt">28
+&lt;/span>&lt;span class="lnt">29
+&lt;/span>&lt;span class="lnt">30
+&lt;/span>&lt;span class="lnt">31
+&lt;/span>&lt;span class="lnt">32
+&lt;/span>&lt;span class="lnt">33
+&lt;/span>&lt;span class="lnt">34
+&lt;/span>&lt;span class="lnt">35
+&lt;/span>&lt;span class="lnt">36
+&lt;/span>&lt;span class="lnt">37
+&lt;/span>&lt;span class="lnt">38
+&lt;/span>&lt;span class="lnt">39
+&lt;/span>&lt;span class="lnt">40
+&lt;/span>&lt;span class="lnt">41
+&lt;/span>&lt;span class="lnt">42
+&lt;/span>&lt;span class="lnt">43
+&lt;/span>&lt;span class="lnt">44
+&lt;/span>&lt;span class="lnt">45
+&lt;/span>&lt;span class="lnt">46
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-fallback" data-lang="fallback">&lt;span class="line">&lt;span class="cl"># snap-pac example configuration file
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"># see snap-pac(8) for more details
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"># Each section corresponds with a snapper configuration. Add additional sections to add
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"># other configurations to be snapshotted. By default, only the root configuration is snapshotted.
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"># Create a section named [DEFAULT] to have a setting apply for all snapper configurations
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Uncomment to set parameters for snapper configuration named root
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">[root]
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## How many characters to limit the description for snapper.
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Default is 72
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">desc_limit = 72
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Whether or not to take snapshots of this snapper configuration
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Default is True for root configuration and False for all other configurations
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">snapshot = True
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## What snapper cleanup algorithm to use
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Default is number
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">cleanup_algorithm = number
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Pre snapshot description.
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Default is the pacman command that triggered the hook
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">#pre_description = pacman pre snapshot
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Post snapshot description.
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Default is the list of packages involved in the pacman transaction
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">#post_description = pacman post snapshot
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Uncomment to add &amp;#34;important=yes&amp;#34; to userdata for snapshots referring to these packages
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Default is []
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">important_packages = [&amp;#34;linux&amp;#34;]
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Uncomment to add &amp;#34;important=yes&amp;#34; to userdata for snapshots that were created with the following commands
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Default is []
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">important_commands = [&amp;#34;pacman -Syu&amp;#34;]
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Add custom userdata. Each key-value pair should be an item in the list
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Default is []
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">#userdata = [&amp;#34;key=value&amp;#34;,&amp;#34;foo=bar&amp;#34;]
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Example for another snapper configuration named &amp;#34;home&amp;#34;
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"># [home]
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">## Default is False
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"># snapshot = True
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>配置好之后， 每次使用&lt;code>pacman&lt;/code>进行包的操作， snapper都会对设定的子卷进行快照&lt;/p></description></item><item><title>用Virt-Mnanger来配置qemu hostfwd端口转发</title><link>https://sharelter.github.io/p/qemu-hostfwd-config/</link><pubDate>Thu, 30 Mar 2023 12:20:52 +0800</pubDate><guid>https://sharelter.github.io/p/qemu-hostfwd-config/</guid><description>&lt;p>尝试用qemu/kvm装一台Ubuntu 22.04来跑一点服务， 通过&lt;a class="link" href="https://wiki.archlinux.org/title/Virt-Manager" target="_blank" rel="noopener"
+>这个&lt;/a>配置了virt-manager的qemu-user-session&lt;/p>
+&lt;p>&lt;del>(反复reboot了几次才成功跑起来，都是因为我没有把manual看全就急着up and running)&lt;/del>&lt;/p>
+&lt;p>这个virtualhost是要对外提供服务的嘛，因为qemu的user-network是通过NAT的，这里就需要一点端口转发的魔法&lt;/p>
+&lt;p>开始的思路是用macvtap或者bridged的network
+但是我的nic是一块intel AX211 wirelesscard, 而macvtap和bridge这种bridged的网络模式都不太支援无线网路&lt;/p>
+&lt;p>创建bridge的话还要干掉主机的network-manager&lt;/p>
+&lt;p>那么就另寻出路吧。。&lt;/p>
+&lt;p>询问了一下&lt;code>@ziyao&lt;/code>姐姐， 得到道具&lt;code>hostfwd&lt;/code>&lt;/p>
+&lt;p>去DuckDuckGo Search了一下&lt;code>qemu hostfwd&lt;/code>找到了&lt;a class="link" href="https://unix.stackexchange.com/questions/124681/how-to-ssh-from-host-to-guest-using-qemu" target="_blank" rel="noopener"
+>这个&lt;/a>
+这个post有166k的访问量诶， 可见这个需求是十分常见的&lt;/p>
+&lt;p>但是这个使用qemu的cli来运行的virtualhost, virt-manager是用XML格式的配置文件来管理每个virtualmachine的config的&lt;/p>
+&lt;p>继续Search&lt;code>how to port forward ssh in virt manager&lt;/code>，在StackOverFlow上面找到了&lt;a class="link" href="https://unix.stackexchange.com/questions/350339/how-to-port-forward-ssh-in-virt-manager" target="_blank" rel="noopener"
+>这个&lt;/a> 嗯， 就是我想要的东西&lt;/p>
+&lt;p>&lt;del>又是因为太着急了， 没有看全manual就去操作&lt;/del>，导致浪费了一些时间来找virt-manager的config文件在什么地方&lt;/p>
+&lt;p>翻了几篇post，得知要用&lt;code>virsh edit&lt;/code>来编辑，这时候回来再看这个指南， 发现怎样编辑virtualhost的配置已经在第一行写明了呜呜呜&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-fallback" data-lang="fallback">&lt;span class="line">&lt;span class="cl">virsh -c qemu:///session edit ubuntu18.04
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>这就是stackoverflow那篇post上面给出的编辑virtualhost配置的方法&lt;/p>
+&lt;p>ubuntu18.04是创建的virtualhost的名字&lt;/p>
+&lt;p>接下来先把原有的nic的长得像下面这样子的配置去掉&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;span class="lnt">2
+&lt;/span>&lt;span class="lnt">3
+&lt;/span>&lt;span class="lnt">4
+&lt;/span>&lt;span class="lnt">5
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-fallback" data-lang="fallback">&lt;span class="line">&lt;span class="cl">&amp;lt;interface type=&amp;#39;user&amp;#39;&amp;gt;
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> &amp;lt;mac address=&amp;#39;52:54:00:52:35:ff&amp;#39;/&amp;gt;
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> &amp;lt;model type=&amp;#39;rtl8139&amp;#39;/&amp;gt;
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> &amp;lt;address type=&amp;#39;pci&amp;#39; domain=&amp;#39;0x0000&amp;#39; bus=&amp;#39;0x00&amp;#39; slot=&amp;#39;0x03&amp;#39; function=&amp;#39;0x0&amp;#39;/&amp;gt;
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">&amp;lt;/interface&amp;gt;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>在xml的根节点里加上qemu的命名空间:&lt;/p>
+&lt;p>配置文件里面原本是这样子的&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-fallback" data-lang="fallback">&lt;span class="line">&lt;span class="cl">&amp;lt;domain type=&amp;#39;kvm&amp;#39;&amp;gt;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>插入之后是酱紫&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-fallback" data-lang="fallback">&lt;span class="line">&lt;span class="cl">&amp;lt;domain type=&amp;#39;kvm&amp;#39; xmlns:qemu=&amp;#39;http://libvirt.org/schemas/domain/qemu/1.0&amp;#39;&amp;gt;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>把这段插入到domain的根节点之间：&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;span class="lnt">2
+&lt;/span>&lt;span class="lnt">3
+&lt;/span>&lt;span class="lnt">4
+&lt;/span>&lt;span class="lnt">5
+&lt;/span>&lt;span class="lnt">6
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-fallback" data-lang="fallback">&lt;span class="line">&lt;span class="cl">&amp;lt;qemu:commandline&amp;gt;
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> &amp;lt;qemu:arg value=&amp;#39;-netdev&amp;#39;/&amp;gt;
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> &amp;lt;qemu:arg value=&amp;#39;user,id=ubuntu-net,net=10.0.10.0/24,dhcpstart=10.0.10.10,hostfwd=tcp::10080-:80,hostfwd=tcp::10443-:443,hostfwd=tcp::22222-:22&amp;#39;/&amp;gt;
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> &amp;lt;qemu:arg value=&amp;#39;-device&amp;#39;/&amp;gt;
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> &amp;lt;qemu:arg value=&amp;#39;virtio-net,netdev=ubuntu-net,addr=0x10&amp;#39;/&amp;gt;
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">&amp;lt;/qemu:commandline&amp;gt;
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>&lt;code>-netdev&lt;/code>定义了一个qemu虚拟网络, 然后再通过&lt;code>-device&lt;/code>参数， 定义一个虚拟网卡接入到刚才定义的网络当中去&lt;/p>
+&lt;p>保存退出， 运行一下这个虚拟机&lt;/p>
+&lt;p>发现新添加的nic的pcie address和已有的虚拟vga设备冲突了&lt;/p>
+&lt;p>原来是没有指定在pcie总线上面的地址，因为这个nic是通过命名行参数添加的
+自动分配到第一个pcie地址上面去了&lt;/p>
+&lt;p>而第一个地址又被xml里面定义的其他设备使用了&lt;/p>
+&lt;p>所以用&lt;code>addr=&lt;/code>分配一个没有被使用的地址就可以了！&lt;/p>
+&lt;p>改好之后果然就可以fireup and running了， 但是&lt;code>ip link&lt;/code>发现虚拟网卡是&lt;code>LINK DOWN&lt;/code>的状态&lt;/p>
+&lt;p>再去StackOverFlow搜索一下，&lt;code>sudo dhclient $netdevice&lt;/code>&lt;/p>
+&lt;p>网络就可以用了&lt;/p>
+&lt;p>想用&lt;code>network-manager&lt;/code>来配置， 但是发现ubuntu server默认不是用的NM,而是netplan&lt;/p>
+&lt;p>编辑&lt;code>/etc/netplan/00-installer-config.yaml&lt;/code>:&lt;/p>
+&lt;p>把网络设备名字改成当前的问题就解决了&lt;/p></description></item><item><title>让ArchLinux运行在Btrfs上！</title><link>https://sharelter.github.io/p/archlinux-btrfs/</link><pubDate>Sun, 12 Mar 2023 09:21:48 +0000</pubDate><guid>https://sharelter.github.io/p/archlinux-btrfs/</guid><description>&lt;img src="https://sharelter.github.io/p/archlinux-btrfs/btrfs-logo.jpg" alt="Featured image of post 让ArchLinux运行在Btrfs上！" />&lt;h2 id="缘起">缘起&lt;/h2>
+&lt;p>最近主力laptop上面的Arch根目录余量一直在1.5GiB上下徘徊，
+今天滚完之后&lt;code>/&lt;/code>仅剩的900+MB 已经不能完成Arch的每日一滚了&lt;/p>
+&lt;p>因为我在安装这个Arch的时候使用了固定的分区方式，
+而且根目录只分配了20GB, 安装使用桌面作业系统的话，
+很轻松就可以吃光这点空间&lt;/p>
+&lt;p>之前的分区方式大概如下表&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;span class="lnt">2
+&lt;/span>&lt;span class="lnt">3
+&lt;/span>&lt;span class="lnt">4
+&lt;/span>&lt;span class="lnt">5
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-txt" data-lang="txt">&lt;span class="line">&lt;span class="cl">/dev/nvme0n1---
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> |
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> --- partation1 - /root(ext4, 20G)
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> |
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"> --- partation2 - /home(f2fs, 460G)
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>不幸的是我在使用的磁盘里面没有留下空余的未分配空间给根目录分区扩充，
+比较好的方法是重装整个OS&lt;/p>
+&lt;p>如果不干预的话， 我的开发环境会在不远的将来boom掉&lt;/p>
+&lt;p>那么事不宜迟， 开工！&lt;/p>
+&lt;blockquote>
+&lt;p>在求教c10s之后，她扔出了如下表情
+&lt;img src="https://sharelter.github.io/p/archlinux-btrfs/btrfs-recommend.jpg"
+width="437"
+height="512"
+srcset="https://sharelter.github.io/p/archlinux-btrfs/btrfs-recommend_hue81d5990641beea4fe16f44827af614a_32379_480x0_resize_q75_box.jpg 480w, https://sharelter.github.io/p/archlinux-btrfs/btrfs-recommend_hue81d5990641beea4fe16f44827af614a_32379_1024x0_resize_q75_box.jpg 1024w"
+loading="lazy"
+alt="recommend-btrfs"
+class="gallery-image"
+data-flex-grow="85"
+data-flex-basis="204px"
+>&lt;/p>
+&lt;/blockquote>
+&lt;p>嗯。。被强烈安利了btrfs&lt;/p>
+&lt;p>之前也有听过btrfs这个东东，但是&lt;del>因为懒&lt;/del>还没有用过&lt;/p>
+&lt;p>在Archwiki找到btrfs的&lt;a class="link" href="https://wiki.archlinux.org/title/Btrfs" target="_blank" rel="noopener"
+>wikipage&lt;/a>
+发现自带很多高级的功能 例如逻辑卷管理、快照、RAID &amp;hellip;etc.&lt;/p>
+&lt;blockquote>
+&lt;p>Btrfs is a modern copy on write (CoW) filesystem for Linux aimed at implementing advanced features while also focusing on fault tolerance, repair and easy administration. Jointly developed at multiple companies, Btrfs is licensed under the GPL and open for contribution from anyone.&lt;/p>
+&lt;/blockquote>
+&lt;p>看起来很好耶，上车！&lt;/p>
+&lt;blockquote>
+&lt;p>Tips: btrfs的开发十分活跃， 建议使用最新的内核，尽量避免使用祖传的老版本内核以得到最佳的体验&lt;/p>
+&lt;/blockquote>
+&lt;h2 id="创建文件系统">创建文件系统&lt;/h2>
+&lt;p>先在磁盘上面创建一个btrfs的文件系统
+&lt;code>sudo mkfs.btrfs -L mylabel /dev/nvme0n1p2&lt;/code>&lt;/p>
+&lt;p>btrfs也可以以霸占整个磁盘的方式进行使用， 此时这个磁盘的分区表就由btrfs接管了&lt;/p>
+&lt;p>因为我还需要ESP partation来使用UEFI启动， 就不可以使用这种方式&lt;/p>
+&lt;p>这里我的磁盘是分好了区的， 一个2GB的FAT32分区来实现UEFI启动 剩下的所有空间给btrfs&lt;/p>
+&lt;p>操作到这一步， 已经可以继续下一步往这些文件系统上面安装系统了&lt;/p>
+&lt;p>但是， 这样使用btrfs不能用上它的许多高级功能
+此时如果直接挂载这个分区的话， 可以享受到btrfs的CoW(写时复制) 特性来减少闪存设备的损耗，可以启用压缩、、类似的优势&lt;/p>
+&lt;p>继续操作， 需要使用用户空间的btrfs工具&lt;code>btrfs-progs&lt;/code>
+在ArchLinux上面要安装它，只需
+&lt;code>sudo pacman -S btrfs-progs&lt;/code>&lt;/p>
+&lt;h2 id="btrfs子卷">btrfs子卷&lt;/h2>
+&lt;p>创建好btrfs文件系统之后， 就拥有了一个&lt;code>ID=5&lt;/code>的顶级子卷&lt;/p>
+&lt;p>创建一个空闲的目录(例如&lt;code>/btrfs&lt;/code>) 把文件系统的顶级子卷挂上，
+就可以用 &lt;code>btrfs subvolume create /path/to/subvolume&lt;/code>来创建子卷&lt;/p>
+&lt;p>这里， 我为&lt;code>/root, /home, /swap&lt;/code>这三个目录在顶级子卷下面创建了三个子卷&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;span class="lnt">2
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-bash" data-lang="bash">&lt;span class="line">&lt;span class="cl">btrfs subvoleme create /btrfs/subvol_root
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">btrfs subvolume create /btrfs/subvol_home
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>Archwiki推荐为swap文件单独创建一个子卷直属于顶级子卷的子卷来挂载:
+&lt;code>btrfs subvolume create /btrfs/@swap&lt;/code>&lt;/p>
+&lt;p>btrfs-progs 6.1版本之后，提供了一个直接创建swap文件的命令:
+&lt;code>btrfs filesystem mkswapfile --size 8g /btrfs/@swap/swapfile&lt;/code>&lt;/p>
+&lt;p>可以通过&lt;code>--size&lt;/code>来定义创建的缓存文件的大小，这样创建出来的swap文件就可以直接挂载了～&lt;/p>
+&lt;p>通过&lt;code>btrfs subvolume list -p /mnt&lt;/code> 可以列出文件系统下面的子卷&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt">1
+&lt;/span>&lt;span class="lnt">2
+&lt;/span>&lt;span class="lnt">3
+&lt;/span>&lt;span class="lnt">4
+&lt;/span>&lt;span class="lnt">5
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-txt" data-lang="txt">&lt;span class="line">&lt;span class="cl">ID 256 gen 10069 parent 5 top level 5 path subvol_root
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">ID 257 gen 10069 parent 5 top level 5 path subvol_home
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">ID 258 gen 9195 parent 5 top level 5 path @swap
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">ID 259 gen 17 parent 256 top level 256 path subvol_root/var/lib/portables
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">ID 260 gen 18 parent 256 top level 256 path subvol_root/var/lib/machines
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>上面是我的子卷列表&lt;/p>
+&lt;h2 id="挂载">挂载&lt;/h2>
+&lt;p>在挂载的时候加上&lt;code>subvol=/path/to/subvolume&lt;/code>或者&lt;code>subvolid=?&lt;/code>，btrfs子卷就可以像文件系统分区一样被挂载&lt;/p>
+&lt;p>推荐创建一个子卷来挂载根目录，这样会为以后更改子卷布局和快照带来非常大的便利&lt;/p>
+&lt;p>我添加了 &lt;code>compress=zstd&lt;/code>启用zstd压缩方式，&lt;code>discard=async&lt;/code>启用SSD-TRIM 参数
+Update: 去掉了&lt;code>autodefrag&lt;/code>,在SSD上面使用这个选项弊大于利&lt;/p>
+&lt;p>因为是在安装过程中操作， 挂载的选项都会被&lt;code>genfstab&lt;/code>自动插到&lt;code>/etc/fstab&lt;/code>当中&lt;/p>
+&lt;p>我的&lt;code>/etc/fstab&lt;/code>如下:&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt"> 1
+&lt;/span>&lt;span class="lnt"> 2
+&lt;/span>&lt;span class="lnt"> 3
+&lt;/span>&lt;span class="lnt"> 4
+&lt;/span>&lt;span class="lnt"> 5
+&lt;/span>&lt;span class="lnt"> 6
+&lt;/span>&lt;span class="lnt"> 7
+&lt;/span>&lt;span class="lnt"> 8
+&lt;/span>&lt;span class="lnt"> 9
+&lt;/span>&lt;span class="lnt">10
+&lt;/span>&lt;span class="lnt">11
+&lt;/span>&lt;span class="lnt">12
+&lt;/span>&lt;span class="lnt">13
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-txt" data-lang="txt">&lt;span class="line">&lt;span class="cl"># /dev/nvme0n1p2 LABEL=Arch
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">UUID=efeb8313-4210-4499-a805-d0f97e57c549 / btrfs rw,relatime,compress=zstd:3,ssd,discard=async,space_cache=v2,autodefrag,subvolid=256,subvol=/subvol_root 0 0
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"># /dev/nvme0n1p1
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">UUID=45BB-F7D1 /boot vfat rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro 0 2
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"># /dev/nvme0n1p2 LABEL=Arch
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">UUID=efeb8313-4210-4499-a805-d0f97e57c549 /home btrfs rw,relatime,compress=zstd:3,ssd,discard=async,space_cache=v2,autodefrag,subvolid=257,subvol=/subvol_home 0 0
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl"># /dev/nvme0n1p2 LABEL=Arch
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">UUID=efeb8313-4210-4499-a805-d0f97e57c549 /swap btrfs rw,relatime,compress=zstd:3,ssd,discard=async,space_cache=v2,autodefrag,subvolid=258,subvol=/@swap 0 0
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">/swap/swapfile none swap defaults 0 0
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;h2 id="检查文件系统错误">检查文件系统错误&lt;/h2>
+&lt;p>没有效验的文件系统，文件损坏是无声发生的&lt;/p>
+&lt;p>btrfs提供了&lt;code>scrub&lt;/code>来进行在线的文件系统检查&lt;/p>
+&lt;p>BtrfsWiki这样写道：&lt;/p>
+&lt;blockquote>
+&lt;p>Btrfs scrub is &amp;ldquo;[a]n online filesystem checking tool. Reads all the data and metadata on the filesystem and uses checksums and the duplicate copies from RAID storage to identify and repair any corrupt data.&amp;rdquo;&lt;/p>
+&lt;/blockquote>
+&lt;p>挂上文件系统的根目录进行一次扫描操作: &lt;code>sudo btrfs scrub start /&lt;/code>&lt;/p>
+&lt;p>查看进度: &lt;code>sudo btrfs scrub status /&lt;/code>&lt;/p>
+&lt;div class="highlight">&lt;div class="chroma">
+&lt;table class="lntable">&lt;tr>&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code>&lt;span class="lnt"> 1
+&lt;/span>&lt;span class="lnt"> 2
+&lt;/span>&lt;span class="lnt"> 3
+&lt;/span>&lt;span class="lnt"> 4
+&lt;/span>&lt;span class="lnt"> 5
+&lt;/span>&lt;span class="lnt"> 6
+&lt;/span>&lt;span class="lnt"> 7
+&lt;/span>&lt;span class="lnt"> 8
+&lt;/span>&lt;span class="lnt"> 9
+&lt;/span>&lt;span class="lnt">10
+&lt;/span>&lt;/code>&lt;/pre>&lt;/td>
+&lt;td class="lntd">
+&lt;pre tabindex="0" class="chroma">&lt;code class="language-txt" data-lang="txt">&lt;span class="line">&lt;span class="cl">UUID: efeb8313-4210-4499-a805-d0f97e57c549
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">Scrub started: Sun Mar 12 19:53:53 2023
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">Status: running
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">Duration: 0:00:05
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">Time left: 0:00:14
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">ETA: Sun Mar 12 19:54:16 2023
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">Total to scrub: 93.21GiB
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">Bytes scrubbed: 24.29GiB (26.06%)
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">Rate: 4.86GiB/s
+&lt;/span>&lt;/span>&lt;span class="line">&lt;span class="cl">Error summary: no errors found
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/td>&lt;/tr>&lt;/table>
+&lt;/div>
+&lt;/div>&lt;p>扫描只用了14秒， 非常快！&lt;/p>
+&lt;h2 id="end">End&lt;/h2>
+&lt;p>我也是刚刚上手btrfs, 如果有小可爱有更好的建议或者发现哪里出错了，欢迎评论 or 提出PR~&lt;/p></description></item></channel></rss>
